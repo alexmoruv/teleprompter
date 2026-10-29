@@ -1,0 +1,541 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Суфлёр">
+<meta name="theme-color" content="#0d0f12">
+<title>Суфлёр</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&display=swap">
+<style>
+/* Студийный тёмный интерфейс: редактор сценария → экран суфлёра поверх фронтальной камеры */
+:root{
+  --bg:#0d0f12; --panel:#171a1f; --line:#2a2f37;
+  --fg:#f2efe8; --muted:#8e949e;
+  --cue:#ffb84d;   /* «суфлёрский» янтарь: текущее слово и маркер строки */
+  --rec:#ff3b30;   /* запись */
+  --font:'Golos Text',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:var(--font);-webkit-text-size-adjust:100%}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--cue);outline-offset:2px}
+[hidden]{display:none!important}
+
+/* ---------- редактор ---------- */
+.editor{min-height:100%;max-width:720px;margin:0 auto;display:flex;flex-direction:column;gap:14px;
+  padding-block:calc(env(safe-area-inset-top,0px) + 18px) calc(env(safe-area-inset-bottom,0px) + 18px);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+h1{font-size:26px;font-weight:600;margin:0;display:flex;align-items:center;gap:10px;letter-spacing:-.01em}
+.tally{width:10px;height:10px;border-radius:50%;background:var(--rec);box-shadow:0 0 10px var(--rec)}
+.meta{color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums;text-align:right}
+textarea{flex:1;min-height:38vh;width:100%;background:var(--panel);border:1px solid var(--line);border-radius:12px;
+  color:var(--fg);font:17px/1.5 var(--font);padding:14px;resize:none}
+.settings{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.field{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.field.wide{grid-column:1/-1}
+.field>span{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;display:flex;justify-content:space-between}
+.field>span b{font-weight:500;color:var(--fg);letter-spacing:0;text-transform:none;font-variant-numeric:tabular-nums}
+select{background:transparent;color:var(--fg);border:0;font:16px var(--font);padding:0;width:100%}
+input[type=range]{width:100%;accent-color:var(--cue)}
+.seg{display:flex;gap:4px}
+.seg button{flex:1;border:1px solid var(--line);background:transparent;border-radius:8px;padding:7px 4px;font-size:14px}
+.seg button[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.go{background:var(--cue);color:#1d1406;border:0;border-radius:14px;padding:16px;font-size:18px;font-weight:600}
+.hint{font-size:13px;color:var(--muted);line-height:1.5;margin:0}
+.err{color:#ff8a80;font-size:14px;margin:0}
+
+/* ---------- экран суфлёра ---------- */
+.prompter{position:fixed;inset:0;background:#000;overflow:hidden;touch-action:pan-y}
+#cam{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
+.textwrap{position:absolute;left:0;right:0;top:0;height:var(--area,56%);
+  background:linear-gradient(rgba(0,0,0,.74) 72%,rgba(0,0,0,0))}
+#scroller{position:absolute;inset:0;overflow-y:scroll;-webkit-overflow-scrolling:touch;scrollbar-width:none;
+  padding:calc(env(safe-area-inset-top,0px) + 58px) max(22px,env(safe-area-inset-right,0px)) 0 max(26px,env(safe-area-inset-left,0px));
+  -webkit-mask-image:linear-gradient(transparent 0,#000 calc(env(safe-area-inset-top,0px) + 50px),#000 82%,transparent);
+          mask-image:linear-gradient(transparent 0,#000 calc(env(safe-area-inset-top,0px) + 50px),#000 82%,transparent)}
+#scroller::-webkit-scrollbar{display:none}
+#text{font-size:var(--fs,30px);line-height:1.38;font-weight:500;color:#fff;padding-bottom:70vh;user-select:none;-webkit-user-select:none}
+#text p{margin:0 0 .55em}
+#text span{transition:color .2s}
+#text span.read{color:rgba(255,255,255,.36)}
+#text span.cur{color:var(--cue)}
+.cueMark{position:absolute;left:max(6px,env(safe-area-inset-left,0px));width:0;height:0;pointer-events:none;
+  border-left:11px solid var(--cue);border-top:8px solid transparent;border-bottom:8px solid transparent}
+
+.topbar{position:absolute;top:0;left:0;right:0;z-index:3;display:flex;align-items:center;justify-content:space-between;gap:8px;
+  padding:calc(env(safe-area-inset-top,0px) + 8px) max(12px,env(safe-area-inset-right,0px)) 0 max(12px,env(safe-area-inset-left,0px))}
+.pills{display:flex;gap:6px;flex-wrap:wrap}
+.pill{font-size:13px;padding:6px 10px;border-radius:99px;background:rgba(0,0,0,.5);display:flex;align-items:center;gap:6px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.pill.live .dot{background:#34c759}
+.pill.heard .dot{background:#34c759;box-shadow:0 0 0 4px rgba(52,199,89,.35)}
+.pill.recording .dot{background:var(--rec);animation:blink 1s infinite}
+@keyframes blink{50%{opacity:.25}}
+
+.bottombar{position:absolute;left:0;right:0;bottom:0;z-index:3;display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:24px max(18px,env(safe-area-inset-right,0px)) calc(env(safe-area-inset-bottom,0px) + 18px) max(18px,env(safe-area-inset-left,0px));
+  background:linear-gradient(transparent,rgba(0,0,0,.55))}
+.group{display:flex;gap:10px}
+.icon{width:46px;height:46px;border-radius:50%;border:0;background:rgba(0,0,0,.5);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+  display:grid;place-items:center;font-size:15px;font-weight:600}
+.icon svg{width:22px;height:22px;stroke:#fff;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.icon[aria-pressed="true"]{background:var(--fg);color:var(--bg)}
+.icon[aria-pressed="true"] svg{stroke:var(--bg)}
+.recbtn{width:78px;height:78px;border-radius:50%;border:4px solid #fff;background:transparent;display:grid;place-items:center;padding:0;flex:none}
+.recbtn i{display:block;width:60px;height:60px;border-radius:50%;background:var(--rec);transition:all .2s}
+.recbtn.on i{width:28px;height:28px;border-radius:6px}
+
+.count{position:absolute;inset:0;z-index:5;display:grid;place-items:center;font-size:120px;font-weight:600;color:#fff;
+  text-shadow:0 4px 30px rgba(0,0,0,.6);pointer-events:none}
+.toast{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom,0px) + 120px);z-index:6;
+  background:rgba(20,22,26,.92);padding:10px 14px;border-radius:12px;font-size:14px;max-width:calc(100% - 32px);text-align:center}
+
+.sheet{position:fixed;inset:0;z-index:10;background:rgba(0,0,0,.82);display:flex;flex-direction:column;gap:12px;justify-content:center;
+  padding:calc(env(safe-area-inset-top,0px) + 16px) max(16px,env(safe-area-inset-right,0px)) calc(env(safe-area-inset-bottom,0px) + 16px) max(16px,env(safe-area-inset-left,0px))}
+.sheet video{width:100%;max-height:62vh;border-radius:14px;background:#000}
+.sheet .row{display:flex;gap:10px;flex-wrap:wrap}
+.sheet button,.sheet a{flex:1;min-width:140px;text-align:center;text-decoration:none;border-radius:12px;padding:14px;font-size:16px;font-weight:600;border:1px solid var(--line);background:var(--panel);color:var(--fg)}
+.sheet .primary{background:var(--cue);color:#1d1406;border-color:var(--cue)}
+@media (prefers-reduced-motion:reduce){#text span{transition:none}.pill.recording .dot{animation:none}}
+</style>
+</head>
+<body>
+
+<!-- ============ РЕДАКТОР ============ -->
+<main class="editor" id="editor">
+  <div class="head">
+    <h1><span class="tally"></span>Суфлёр</h1>
+    <div class="meta" id="meta">0 слов</div>
+  </div>
+
+  <textarea id="script" spellcheck="false" placeholder="Вставьте текст ролика"></textarea>
+
+  <div class="settings">
+    <div class="field">
+      <span>Прокрутка</span>
+      <div class="seg" id="modeSeg">
+        <button type="button" data-mode="voice" aria-pressed="true">Голос</button>
+        <button type="button" data-mode="auto" aria-pressed="false">Темп</button>
+      </div>
+    </div>
+    <div class="field">
+      <span>Язык речи</span>
+      <select id="lang">
+        <option value="ru-RU">Русский</option>
+        <option value="en-US">English (US)</option>
+        <option value="en-GB">English (UK)</option>
+      </select>
+    </div>
+    <div class="field">
+      <span>Шрифт <b id="fsVal">30</b></span>
+      <input type="range" id="fs" min="20" max="56" step="1" value="30">
+    </div>
+    <div class="field">
+      <span>Темп <b id="wpmVal">130 сл/мин</b></span>
+      <input type="range" id="wpm" min="70" max="200" step="5" value="130">
+    </div>
+    <div class="field wide">
+      <span>Высота поля текста <b id="areaVal">56%</b></span>
+      <input type="range" id="area" min="35" max="80" step="1" value="56">
+    </div>
+  </div>
+
+  <p class="err" id="err" hidden></p>
+  <button class="go" id="go" type="button">Открыть камеру</button>
+  <p class="hint">Режим «Голос» сам двигает текст, пока вы читаете. «Темп» прокручивает с постоянной скоростью. На экране суфлёра можно листать текст пальцем или тапнуть по слову, чтобы продолжить с него. Видео пишется прямо здесь, текст в кадр не попадает.</p>
+</main>
+
+<!-- ============ СУФЛЁР ============ -->
+<section class="prompter" id="prompter" hidden>
+  <video id="cam" playsinline autoplay muted></video>
+
+  <div class="textwrap" id="textwrap">
+    <div id="scroller"><div id="text"></div></div>
+    <div class="cueMark" id="cueMark"></div>
+  </div>
+
+  <div class="topbar">
+    <div class="pills">
+      <div class="pill" id="micPill"><span class="dot"></span><span id="micText">Микрофон</span></div>
+      <div class="pill" id="recPill" hidden><span class="dot"></span><span id="recTime">00:00</span></div>
+    </div>
+    <button class="icon" id="close" type="button" aria-label="Закрыть суфлёр">
+      <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+  </div>
+
+  <div class="bottombar">
+    <div class="group">
+      <button class="icon" id="smaller" type="button" aria-label="Уменьшить шрифт">A−</button>
+      <button class="icon" id="bigger" type="button" aria-label="Увеличить шрифт">A+</button>
+    </div>
+    <button class="recbtn" id="rec" type="button" aria-label="Начать запись"><i></i></button>
+    <div class="group">
+      <button class="icon" id="restart" type="button" aria-label="К началу текста">
+        <svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v4h4"/></svg>
+      </button>
+      <button class="icon" id="pause" type="button" aria-label="Пауза прокрутки" aria-pressed="false">
+        <svg viewBox="0 0 24 24"><path d="M9 5v14M15 5v14"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="count" id="count" hidden></div>
+  <div class="toast" id="toast" hidden></div>
+</section>
+
+<!-- ============ ГОТОВОЕ ВИДЕО ============ -->
+<div class="sheet" id="sheet" hidden>
+  <video id="result" playsinline controls></video>
+  <div class="row">
+    <button class="primary" id="save" type="button">Сохранить в Фото</button>
+    <a id="dl" href="#" download>Скачать файл</a>
+  </div>
+  <div class="row"><button id="again" type="button">Переснять</button></div>
+</div>
+
+<script>
+(() => {
+const $ = s => document.querySelector(s);
+const SAMPLE = `Пример текста. Замените на свой сценарий.
+
+Рынок блогеров в России за 2025 год вырос на 19 процентов и достиг 69 миллиардов рублей. Это данные свежего исследования АКАР.
+
+Самое интересное происходит в Telegram. Бюджеты там почти удвоились, с 11 до 22 миллиардов. YouTube всё ещё первый, но разрыв сократился до двух миллиардов.
+
+При этом просмотров стало меньше примерно на четверть. Рекламодатели платят больше за каждый контакт с аудиторией.`;
+
+const S = {
+  spans: [], norm: [], idx: 0, mode: 'voice', paused: false,
+  stream: null, recog: null, recognizing: false, recorder: null, chunks: [],
+  touching: false, lastHeard: 0, wake: null, open: false, recStart: 0, recTimer: null,
+  autoLast: 0, autoRaf: 0, blob: null
+};
+
+/* ---------- настройки и сохранение ---------- */
+const store = {
+  get(k, d){ try{ const v = localStorage.getItem('tp_'+k); return v === null ? d : v; }catch(e){ return d; } },
+  set(k, v){ try{ localStorage.setItem('tp_'+k, v); }catch(e){} }
+};
+const script = $('#script');
+script.value = store.get('script', SAMPLE);
+$('#lang').value = store.get('lang', 'ru-RU');
+$('#fs').value = store.get('fs', '30');
+$('#wpm').value = store.get('wpm', '130');
+$('#area').value = store.get('area', '56');
+setMode(store.get('mode', 'voice'));
+
+function updateMeta(){
+  const n = script.value.split(/\s+/).filter(w => norm(w)).length;
+  const min = n / (+$('#wpm').value || 130);
+  const m = Math.floor(min), s = Math.round((min - m) * 60);
+  $('#meta').textContent = `${n} слов · ≈ ${m}:${String(s).padStart(2,'0')}`;
+}
+function applyLook(){
+  document.documentElement.style.setProperty('--fs', $('#fs').value + 'px');
+  document.documentElement.style.setProperty('--area', $('#area').value + '%');
+  $('#fsVal').textContent = $('#fs').value;
+  $('#wpmVal').textContent = $('#wpm').value + ' сл/мин';
+  $('#areaVal').textContent = $('#area').value + '%';
+}
+script.addEventListener('input', () => { store.set('script', script.value); updateMeta(); });
+['fs','wpm','area','lang'].forEach(id => $('#'+id).addEventListener('input', e => {
+  store.set(id, e.target.value); applyLook(); updateMeta();
+}));
+$('#modeSeg').addEventListener('click', e => { const b = e.target.closest('button'); if(b) setMode(b.dataset.mode); });
+function setMode(m){
+  S.mode = m; store.set('mode', m);
+  document.querySelectorAll('#modeSeg button').forEach(b => b.setAttribute('aria-pressed', b.dataset.mode === m));
+}
+applyLook(); updateMeta();
+
+/* ---------- текст ---------- */
+function norm(w){ return w.toLowerCase().replace(/ё/g,'е').replace(/[^\p{L}\p{N}]/gu,''); }
+
+function render(){
+  const t = $('#text'); t.innerHTML = ''; S.spans = []; S.norm = [];
+  script.value.split(/\n+/).forEach(par => {
+    if(!par.trim()) return;
+    const p = document.createElement('p');
+    par.trim().split(/\s+/).forEach(tok => {
+      const n = norm(tok);
+      if(n){
+        const s = document.createElement('span');
+        s.textContent = tok; s.dataset.i = S.spans.length;
+        S.spans.push(s); S.norm.push(n); p.appendChild(s);
+      } else p.appendChild(document.createTextNode(tok));
+      p.appendChild(document.createTextNode(' '));
+    });
+    t.appendChild(p);
+  });
+}
+
+const sc = $('#scroller');
+function readY(){ return $('#textwrap').clientHeight * 0.30; }
+function placeCue(){ $('#cueMark').style.top = (readY() + parseFloat(getComputedStyle($('#text')).fontSize) * 0.5) + 'px'; }
+
+function setIdx(i, opts = {}){
+  i = Math.max(0, Math.min(S.spans.length, i));
+  const lo = Math.min(i, S.idx), hi = Math.max(i, S.idx);
+  for(let k = Math.max(0, lo - 1); k <= Math.min(S.spans.length - 1, hi + 1); k++){
+    S.spans[k].classList.toggle('read', k < i);
+    S.spans[k].classList.toggle('cur', k === i);
+  }
+  S.idx = i;
+  if(!opts.noScroll) scrollToIdx();
+}
+function resetMarks(){
+  S.spans.forEach((s,k) => { s.classList.toggle('read', k < S.idx); s.classList.toggle('cur', k === S.idx); });
+}
+
+/* плавная прокрутка к строке текущего слова */
+let targetTop = 0, animating = false;
+function scrollToIdx(){
+  const sp = S.spans[Math.min(S.idx, S.spans.length - 1)];
+  if(!sp) return;
+  targetTop = Math.max(0, sp.offsetTop - readY());
+  if(!animating){ animating = true; requestAnimationFrame(step); }
+}
+function step(){
+  if(S.touching){ animating = false; return; }
+  const d = targetTop - sc.scrollTop;
+  if(Math.abs(d) < 0.6){ sc.scrollTop = targetTop; animating = false; return; }
+  sc.scrollTop += d * 0.14;
+  requestAnimationFrame(step);
+}
+/* слово, которое сейчас на линии чтения */
+function wordAtLine(){
+  const y = sc.scrollTop + readY() - 4;
+  let lo = 0, hi = S.spans.length - 1, ans = 0;
+  while(lo <= hi){ const m = (lo + hi) >> 1; if(S.spans[m].offsetTop <= y){ ans = m; lo = m + 1; } else hi = m - 1; }
+  const top = S.spans[ans]?.offsetTop;
+  while(ans > 0 && S.spans[ans - 1].offsetTop === top) ans--;   // начало строки
+  return ans;
+}
+
+/* ручное управление пальцем */
+sc.addEventListener('touchstart', () => { S.touching = true; }, {passive:true});
+sc.addEventListener('touchend', () => {
+  setTimeout(() => { if(S.mode === 'voice') setIdx(wordAtLine(), {noScroll:true}); S.touching = false; }, 350);
+}, {passive:true});
+$('#text').addEventListener('click', e => {
+  const s = e.target.closest('span[data-i]'); if(!s) return;
+  S.touching = false; setIdx(+s.dataset.i);
+});
+
+/* ---------- сопоставление речи с текстом ---------- */
+function lev(a, b){
+  const m = a.length, n = b.length; if(!m) return n; if(!n) return m;
+  let prev = Array.from({length:n+1}, (_,j) => j);
+  for(let i = 1; i <= m; i++){
+    const cur = [i];
+    for(let j = 1; j <= n; j++) cur[j] = Math.min(prev[j] + 1, cur[j-1] + 1, prev[j-1] + (a[i-1] === b[j-1] ? 0 : 1));
+    prev = cur;
+  }
+  return prev[n];
+}
+function sim(a, b){
+  if(a === b) return 1;
+  if(a.length >= 4 && b.length >= 4 && a.slice(0,4) === b.slice(0,4)) return 0.8;
+  if(a.length >= 3 && Math.abs(a.length - b.length) <= 2 && lev(a,b) <= (Math.max(a.length,b.length) > 6 ? 2 : 1)) return 0.7;
+  return 0;
+}
+function scoreAt(tail, p, k0){
+  let score = 0, q = p, run = 0;
+  for(let k = k0; k >= 0 && q >= 0; k--){
+    const s = sim(tail[k], S.norm[q]);
+    if(s){ score += s * (S.norm[q].length <= 2 ? 0.5 : 1); q--; run++; }
+    else if(q - 1 >= 0 && sim(tail[k], S.norm[q-1])){ score += 0.55; q -= 2; run++; }
+    else if(run === 0 && k === k0) continue;       // последнее слово ещё не дорасслышано
+    else break;
+  }
+  return score;
+}
+function locate(heard){
+  const tail = heard.slice(-7);
+  if(!tail.length || !S.norm.length) return;
+  const from = Math.max(0, S.idx - 4), to = Math.min(S.norm.length - 1, S.idx + 35);
+  let best = -1, bestScore = 0;
+  for(let p = from; p <= to; p++){
+    let sc0 = scoreAt(tail, p, tail.length - 1);
+    const dist = p - S.idx;
+    sc0 -= dist >= 0 ? dist * 0.025 : 0.4 + (-dist) * 0.1;
+    if(sc0 > bestScore){ bestScore = sc0; best = p; }
+  }
+  const need = tail.length >= 3 ? 1.6 : 0.9;
+  if(best >= 0 && bestScore >= need && best + 1 !== S.idx) setIdx(best + 1);
+}
+
+/* ---------- распознавание речи ---------- */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+function startRecog(){
+  if(!SR){ toast('Распознавание речи здесь недоступно. Включена прокрутка по темпу.'); setMode('auto'); startAuto(); return; }
+  stopRecog();
+  const r = new SR();
+  r.lang = $('#lang').value; r.continuous = true; r.interimResults = true; r.maxAlternatives = 1;
+  r.onstart = () => { S.recognizing = true; mic('live', 'Слушаю'); };
+  r.onresult = e => {
+    if(S.paused) return;
+    let t = '';
+    for(let i = Math.max(0, e.results.length - 4); i < e.results.length; i++) t += ' ' + e.results[i][0].transcript;
+    locate(t.split(/\s+/).map(norm).filter(Boolean));
+    S.lastHeard = Date.now(); mic('heard', 'Слушаю');
+    clearTimeout(S.heardT); S.heardT = setTimeout(() => S.recognizing && mic('live','Слушаю'), 400);
+  };
+  r.onerror = e => {
+    if(e.error === 'not-allowed' || e.error === 'service-not-allowed'){
+      toast('Нет доступа к распознаванию речи. Включите Siri и диктовку в настройках iPhone или перейдите на «Темп».');
+      S.recog = null; mic('', 'Нет доступа');
+    } else if(e.error === 'audio-capture'){
+      toast('Микрофон занят записью. Попробуйте снимать без записи звука здесь или режим «Темп».');
+    }
+  };
+  r.onend = () => {
+    S.recognizing = false;
+    if(S.open && S.mode === 'voice' && S.recog === r) setTimeout(() => { try{ r.start(); }catch(_){} }, 120);
+    else mic('', 'Микрофон');
+  };
+  S.recog = r;
+  try{ r.start(); }catch(_){}
+}
+function stopRecog(){ const r = S.recog; S.recog = null; if(r){ try{ r.abort(); }catch(_){} } }
+function mic(cls, txt){ const p = $('#micPill'); p.className = 'pill ' + cls; $('#micText').textContent = txt; }
+
+/* ---------- прокрутка по темпу ---------- */
+function startAuto(){
+  cancelAnimationFrame(S.autoRaf); S.autoLast = performance.now();
+  mic('live', `Темп ${$('#wpm').value}`);
+  const loop = now => {
+    const dt = (now - S.autoLast) / 1000; S.autoLast = now;
+    if(!S.paused && !S.touching && S.spans.length){
+      const pxPerWord = ($('#text').scrollHeight - innerHeight * 0.7) / S.spans.length;
+      sc.scrollTop += (+$('#wpm').value / 60) * pxPerWord * dt;
+      const w = wordAtLine(); if(w !== S.idx) setIdx(w, {noScroll:true});
+    }
+    S.autoRaf = requestAnimationFrame(loop);
+  };
+  S.autoRaf = requestAnimationFrame(loop);
+}
+
+/* ---------- камера ---------- */
+async function openPrompter(){
+  $('#err').hidden = true;
+  if(!navigator.mediaDevices?.getUserMedia){
+    showErr('Камера недоступна. Откройте страницу в Safari по адресу https://…'); return;
+  }
+  try{
+    S.stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user', width: { ideal: 1080 }, height: { ideal: 1920 }, frameRate: { ideal: 30 } },
+      audio: { echoCancellation: true, noiseSuppression: true }
+    });
+  }catch(e){
+    showErr(e.name === 'NotAllowedError' ? 'Safari не дал доступ к камере. Разрешите камеру и микрофон: «аА» в адресной строке → Настройки веб-сайта.' : 'Не удалось включить камеру: ' + e.message);
+    return;
+  }
+  $('#cam').srcObject = S.stream;
+  $('#editor').hidden = true; $('#prompter').hidden = false; S.open = true;
+  render(); applyLook();
+  S.idx = 0; resetMarks(); sc.scrollTop = 0;
+  requestAnimationFrame(placeCue);
+  try{ S.wake = await navigator.wakeLock?.request('screen'); }catch(_){}
+  setPaused(false);
+  if(S.mode === 'voice') startRecog(); else startAuto();
+}
+function showErr(t){ const e = $('#err'); e.textContent = t; e.hidden = false; }
+
+function closePrompter(){
+  if(S.recorder?.state === 'recording'){ S.discardOnStop = true; S.recorder.stop(); }
+  S.open = false; stopRecog(); cancelAnimationFrame(S.autoRaf);
+  S.stream?.getTracks().forEach(t => t.stop()); S.stream = null;
+  try{ S.wake?.release(); }catch(_){}
+  $('#prompter').hidden = true; $('#editor').hidden = false;
+}
+
+/* ---------- запись ---------- */
+function pickType(){
+  const list = ['video/mp4;codecs=avc1,mp4a.40.2','video/mp4','video/webm;codecs=vp9,opus','video/webm'];
+  return list.find(t => window.MediaRecorder?.isTypeSupported?.(t)) || '';
+}
+async function toggleRec(){
+  if(S.recorder?.state === 'recording'){ S.recorder.stop(); return; }
+  if(!window.MediaRecorder){ toast('Запись видео в этом браузере не поддерживается.'); return; }
+  const c = $('#count'); c.hidden = false;
+  for(const n of [3,2,1]){ c.textContent = n; await new Promise(r => setTimeout(r, 800)); }
+  c.hidden = true;
+  const type = pickType();
+  S.chunks = []; S.discardOnStop = false;
+  S.recorder = new MediaRecorder(S.stream, type ? { mimeType: type, videoBitsPerSecond: 8e6 } : {});
+  S.recorder.ondataavailable = e => e.data.size && S.chunks.push(e.data);
+  S.recorder.onstop = () => {
+    clearInterval(S.recTimer); $('#recPill').hidden = true;
+    $('#rec').classList.remove('on'); $('#rec').setAttribute('aria-label','Начать запись');
+    if(S.discardOnStop) return;
+    S.blob = new Blob(S.chunks, { type: S.recorder.mimeType || type || 'video/mp4' });
+    showResult();
+  };
+  S.recorder.start(1000);
+  S.recStart = Date.now();
+  $('#rec').classList.add('on'); $('#rec').setAttribute('aria-label','Остановить запись');
+  const pill = $('#recPill'); pill.hidden = false; pill.className = 'pill recording';
+  const tick = () => { const s = Math.floor((Date.now() - S.recStart) / 1000); $('#recTime').textContent = `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`; };
+  tick(); S.recTimer = setInterval(tick, 500);
+  if(S.mode === 'voice' && S.recog && !S.recognizing){ try{ S.recog.start(); }catch(_){} }
+}
+function fileName(){
+  const d = new Date(), p = n => String(n).padStart(2,'0');
+  const ext = (S.blob.type.includes('webm') ? 'webm' : 'mp4');
+  return `video-${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}.${ext}`;
+}
+function showResult(){
+  const url = URL.createObjectURL(S.blob);
+  $('#result').src = url;
+  const a = $('#dl'); a.href = url; a.download = fileName();
+  $('#sheet').hidden = false;
+}
+$('#save').addEventListener('click', async () => {
+  const file = new File([S.blob], fileName(), { type: S.blob.type });
+  if(navigator.canShare?.({ files: [file] })){
+    try{ await navigator.share({ files: [file] }); }catch(_){}
+  } else $('#dl').click();
+});
+$('#again').addEventListener('click', () => {
+  $('#sheet').hidden = true; $('#result').removeAttribute('src');
+  setIdx(0); sc.scrollTop = 0;
+});
+
+/* ---------- кнопки ---------- */
+function setPaused(v){
+  S.paused = v; $('#pause').setAttribute('aria-pressed', v);
+  if(v) mic('', 'Пауза'); else mic('live', S.mode === 'voice' ? 'Слушаю' : `Темп ${$('#wpm').value}`);
+}
+$('#go').addEventListener('click', openPrompter);
+$('#close').addEventListener('click', closePrompter);
+$('#rec').addEventListener('click', toggleRec);
+$('#pause').addEventListener('click', () => setPaused(!S.paused));
+$('#restart').addEventListener('click', () => { setIdx(0); sc.scrollTop = 0; });
+function bump(d){
+  const v = Math.max(20, Math.min(56, +$('#fs').value + d));
+  $('#fs').value = v; store.set('fs', v); applyLook();
+  requestAnimationFrame(() => { placeCue(); scrollToIdx(); });
+}
+$('#smaller').addEventListener('click', () => bump(-2));
+$('#bigger').addEventListener('click', () => bump(2));
+addEventListener('resize', () => { if(S.open){ placeCue(); scrollToIdx(); } });
+document.addEventListener('visibilitychange', async () => {
+  if(document.visibilityState === 'visible' && S.open){ try{ S.wake = await navigator.wakeLock?.request('screen'); }catch(_){} }
+});
+
+let toastT;
+function toast(t){ const el = $('#toast'); el.textContent = t; el.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => el.hidden = true, 5000); }
+})();
+</script>
+</body>
+</html>

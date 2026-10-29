@@ -1,1 +1,5 @@
-# teleprompter
+# Суфлёр
+
+Телесуфлёр для iPhone: фронтальная камера, текст у объектива, прокрутка по голосу, запись видео.
+
+Открыть: https://alexmoruv.github.io/teleprompter/
