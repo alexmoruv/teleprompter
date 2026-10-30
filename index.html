@@ -470,13 +470,14 @@ async function openPrompter(){
   }
   try{
     S.stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'user', width: { ideal: 1920 }, height: { ideal: 1920 }, frameRate: { ideal: 30 } },
+      video: { facingMode: 'user', width: { ideal: 1920 }, height: { ideal: 1440 }, aspectRatio: { ideal: 4/3 }, frameRate: { ideal: 30 } },
       audio: { echoCancellation: true, noiseSuppression: true }
     });
   }catch(e){
     showErr(e.name === 'NotAllowedError' ? 'Safari не дал доступ к камере. Разрешите камеру и микрофон: «аА» в адресной строке → Настройки веб-сайта.' : 'Не удалось включить камеру: ' + e.message);
     return;
   }
+  await widenView(S.stream.getVideoTracks()[0]);
   $('#cam').srcObject = S.stream;
   $('#editor').hidden = true; $('#prompter').hidden = false; S.open = true;
   render(); applyLook(); sizeFrame();
@@ -485,6 +486,26 @@ async function openPrompter(){
   try{ S.wake = await navigator.wakeLock?.request('screen'); }catch(_){}
   setPaused(false);
   if(S.mode === 'voice') startRecog(); else startAuto();
+}
+/* Полный угол обзора: формат сенсора 4:3 без цифровой обрезки, зум на минимум.
+   Широкоформатные режимы 16:9 у фронталки iPhone вырезаны из центра сенсора и выглядят увеличенными. */
+async function widenView(track){
+  if(!track) return;
+  const is43 = () => { const s = track.getSettings(); const r = s.width && s.height ? Math.max(s.width, s.height) / Math.min(s.width, s.height) : 0; return Math.abs(r - 4/3) < 0.05; };
+  const tries = [
+    { width: { ideal: 1920 }, height: { ideal: 1440 } },
+    { width: { ideal: 1440 }, height: { ideal: 1920 } },
+    { width: { ideal: 1280 }, height: { ideal: 960 } },
+    { width: { ideal: 640 }, height: { ideal: 480 } }
+  ];
+  for(const c of tries){
+    if(is43()) break;
+    try{ await track.applyConstraints({ ...c, aspectRatio: { ideal: 4/3 }, frameRate: { ideal: 30 } }); }catch(_){}
+  }
+  try{
+    const caps = track.getCapabilities?.();
+    if(caps?.zoom) await track.applyConstraints({ advanced: [{ zoom: caps.zoom.min }] });
+  }catch(_){}
 }
 function showErr(t){ const e = $('#err'); e.textContent = t; e.hidden = false; }
 
