@@ -54,7 +54,13 @@ input[type=range]{width:100%;accent-color:var(--cue)}
 
 /* ---------- экран суфлёра ---------- */
 .prompter{position:fixed;inset:0;background:#000;overflow:hidden;touch-action:pan-y}
+.frame{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);overflow:hidden;background:#000;width:100%;height:100%}
 #cam{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
+.frame::after{content:"";position:absolute;inset:0;border:1px solid rgba(255,255,255,.28);pointer-events:none}
+.rotate{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom,0px) + 116px);z-index:4;
+  background:rgba(0,0,0,.6);padding:8px 14px;border-radius:99px;font-size:14px;white-space:nowrap;pointer-events:none}
+.fmtbtn{width:auto;padding:0 14px;border-radius:99px;font-size:14px;font-variant-numeric:tabular-nums}
+.topright{display:flex;gap:8px}
 .textwrap{position:absolute;left:0;right:0;top:0;height:var(--area,56%);
   background:linear-gradient(rgba(0,0,0,.74) 72%,rgba(0,0,0,0))}
 #scroller{position:absolute;inset:0;overflow-y:scroll;-webkit-overflow-scrolling:touch;scrollbar-width:none;
@@ -119,6 +125,13 @@ input[type=range]{width:100%;accent-color:var(--cue)}
   <textarea id="script" spellcheck="false" placeholder="Вставьте текст ролика"></textarea>
 
   <div class="settings">
+    <div class="field wide">
+      <span>Формат видео</span>
+      <div class="seg" id="fmtSeg">
+        <button type="button" data-fmt="v" aria-pressed="true">Вертикальное 9:16</button>
+        <button type="button" data-fmt="h" aria-pressed="false">Горизонтальное 16:9</button>
+      </div>
+    </div>
     <div class="field">
       <span>Прокрутка</span>
       <div class="seg" id="modeSeg">
@@ -155,7 +168,8 @@ input[type=range]{width:100%;accent-color:var(--cue)}
 
 <!-- ============ СУФЛЁР ============ -->
 <section class="prompter" id="prompter" hidden>
-  <video id="cam" playsinline autoplay muted></video>
+  <div class="frame" id="frame"><video id="cam" playsinline autoplay muted></video></div>
+  <div class="rotate" id="rotate" hidden>Поверните телефон</div>
 
   <div class="textwrap" id="textwrap">
     <div id="scroller"><div id="text"></div></div>
@@ -167,9 +181,12 @@ input[type=range]{width:100%;accent-color:var(--cue)}
       <div class="pill" id="micPill"><span class="dot"></span><span id="micText">Микрофон</span></div>
       <div class="pill" id="recPill" hidden><span class="dot"></span><span id="recTime">00:00</span></div>
     </div>
-    <button class="icon" id="close" type="button" aria-label="Закрыть суфлёр">
-      <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
-    </button>
+    <div class="topright">
+      <button class="icon fmtbtn" id="fmtBtn" type="button" aria-label="Сменить формат видео">9:16</button>
+      <button class="icon" id="close" type="button" aria-label="Закрыть суфлёр">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
   </div>
 
   <div class="bottombar">
@@ -232,6 +249,26 @@ $('#fs').value = store.get('fs', '30');
 $('#wpm').value = store.get('wpm', '130');
 $('#area').value = store.get('area', '56');
 setMode(store.get('mode', 'voice'));
+setFmt(store.get('fmt', 'v'));
+
+/* ---------- формат кадра ---------- */
+function fmtDims(){ return S.fmt === 'h' ? [1920, 1080] : [1080, 1920]; }
+function setFmt(f){
+  if(S.recorder?.state === 'recording'){ toast('Формат можно сменить после остановки записи.'); return; }
+  S.fmt = f; store.set('fmt', f);
+  document.querySelectorAll('#fmtSeg button').forEach(b => b.setAttribute('aria-pressed', b.dataset.fmt === f));
+  $('#fmtBtn').textContent = f === 'h' ? '16:9' : '9:16';
+  sizeFrame();
+}
+function sizeFrame(){
+  const [w, h] = fmtDims(), W = innerWidth, H = innerHeight;
+  const s = Math.min(W / w, H / h), fr = $('#frame');
+  fr.style.width = Math.round(w * s) + 'px'; fr.style.height = Math.round(h * s) + 'px';
+  const landscape = W > H;
+  $('#rotate').hidden = (S.fmt === 'h') === landscape;
+  $('#rotate').textContent = S.fmt === 'h' ? 'Поверните телефон горизонтально' : 'Поверните телефон вертикально';
+}
+$('#fmtSeg').addEventListener('click', e => { const b = e.target.closest('button'); if(b) setFmt(b.dataset.fmt); });
 
 function updateMeta(){
   const n = script.value.split(/\s+/).filter(w => norm(w)).length;
@@ -433,7 +470,7 @@ async function openPrompter(){
   }
   try{
     S.stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'user', width: { ideal: 1080 }, height: { ideal: 1920 }, frameRate: { ideal: 30 } },
+      video: { facingMode: 'user', width: { ideal: 1920 }, height: { ideal: 1920 }, frameRate: { ideal: 30 } },
       audio: { echoCancellation: true, noiseSuppression: true }
     });
   }catch(e){
@@ -442,7 +479,7 @@ async function openPrompter(){
   }
   $('#cam').srcObject = S.stream;
   $('#editor').hidden = true; $('#prompter').hidden = false; S.open = true;
-  render(); applyLook();
+  render(); applyLook(); sizeFrame();
   S.idx = 0; resetMarks(); sc.scrollTop = 0;
   requestAnimationFrame(placeCue);
   try{ S.wake = await navigator.wakeLock?.request('screen'); }catch(_){}
@@ -472,9 +509,11 @@ async function toggleRec(){
   c.hidden = true;
   const type = pickType();
   S.chunks = []; S.discardOnStop = false;
-  S.recorder = new MediaRecorder(S.stream, type ? { mimeType: type, videoBitsPerSecond: 8e6 } : {});
+  const recStream = startCanvas() || S.stream;
+  S.recorder = new MediaRecorder(recStream, type ? { mimeType: type, videoBitsPerSecond: 8e6 } : {});
   S.recorder.ondataavailable = e => e.data.size && S.chunks.push(e.data);
   S.recorder.onstop = () => {
+    stopCanvas();
     clearInterval(S.recTimer); $('#recPill').hidden = true;
     $('#rec').classList.remove('on'); $('#rec').setAttribute('aria-label','Начать запись');
     if(S.discardOnStop) return;
@@ -488,6 +527,37 @@ async function toggleRec(){
   const tick = () => { const s = Math.floor((Date.now() - S.recStart) / 1000); $('#recTime').textContent = `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`; };
   tick(); S.recTimer = setInterval(tick, 500);
   if(S.mode === 'voice' && S.recog && !S.recognizing){ try{ S.recog.start(); }catch(_){} }
+}
+/* кадр рисуется на холст точно в выбранной пропорции: 1080×1920 или 1920×1080 */
+function startCanvas(){
+  const cv = document.createElement('canvas');
+  if(!cv.captureStream) return null;
+  const [w, h] = fmtDims(); cv.width = w; cv.height = h;
+  const ctx = cv.getContext('2d'), v = $('#cam');
+  let last = 0;
+  const draw = now => {
+    if(!S.drawing) return;
+    if(now - last >= 32){
+      last = now;
+      const vw = v.videoWidth, vh = v.videoHeight;
+      if(vw && vh){
+        const s = Math.max(w / vw, h / vh), dw = vw * s, dh = vh * s;
+        ctx.drawImage(v, (w - dw) / 2, (h - dh) / 2, dw, dh);
+      }
+    }
+    requestAnimationFrame(draw);
+  };
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, w, h);
+  S.drawing = true; requestAnimationFrame(draw);
+  const cs = cv.captureStream(30);
+  S.stream.getAudioTracks().forEach(t => cs.addTrack(t));
+  S.canvasStream = cs;
+  return cs;
+}
+function stopCanvas(){
+  S.drawing = false;
+  S.canvasStream?.getVideoTracks().forEach(t => t.stop());
+  S.canvasStream = null;
 }
 function fileName(){
   const d = new Date(), p = n => String(n).padStart(2,'0');
@@ -528,7 +598,8 @@ function bump(d){
 }
 $('#smaller').addEventListener('click', () => bump(-2));
 $('#bigger').addEventListener('click', () => bump(2));
-addEventListener('resize', () => { if(S.open){ placeCue(); scrollToIdx(); } });
+$('#fmtBtn').addEventListener('click', () => setFmt(S.fmt === 'h' ? 'v' : 'h'));
+addEventListener('resize', () => { if(S.open){ sizeFrame(); placeCue(); scrollToIdx(); } });
 document.addEventListener('visibilitychange', async () => {
   if(document.visibilityState === 'visible' && S.open){ try{ S.wake = await navigator.wakeLock?.request('screen'); }catch(_){} }
 });
