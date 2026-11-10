@@ -61,6 +61,29 @@ input[type=range]{width:100%;accent-color:var(--cue)}
   background:rgba(0,0,0,.6);padding:8px 14px;border-radius:99px;font-size:14px;white-space:nowrap;pointer-events:none}
 .fmtbtn{width:auto;padding:0 14px;border-radius:99px;font-size:14px;font-variant-numeric:tabular-nums}
 .topright{display:flex;gap:8px}
+#fxCanvas{position:absolute;inset:0;width:100%;height:100%;transform:scaleX(-1)}
+
+.fxpanel{position:absolute;left:0;right:0;bottom:0;z-index:7;max-height:62%;overflow-y:auto;
+  background:rgba(16,18,22,.9);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border-radius:18px 18px 0 0;
+  display:flex;flex-direction:column;gap:10px;
+  padding:14px max(16px,env(safe-area-inset-right,0px)) calc(env(safe-area-inset-bottom,0px) + 16px) max(16px,env(safe-area-inset-left,0px))}
+.fxhead{display:flex;justify-content:space-between;align-items:center;font-size:17px}
+.fxclose{border:0;background:var(--cue);color:#1d1406;border-radius:99px;padding:7px 16px;font-weight:600}
+.fxsec{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-top:4px}
+.fxtogs{display:flex;gap:8px}
+.fxtog{flex:1;border:1px solid var(--line);background:transparent;border-radius:10px;padding:10px 6px;font-size:14px;
+  user-select:none;-webkit-user-select:none;touch-action:none}
+.fxtog[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.fxtog.hold.on{background:var(--cue);color:#1d1406;border-color:var(--cue)}
+.fxtog:disabled{opacity:.4}
+.meter{height:6px;border-radius:3px;background:var(--line);overflow:hidden}
+.meter i{display:block;height:100%;width:0;background:#34c759;transition:width .06s linear}
+.meter i[data-hot="1"]{background:var(--rec)}
+.fxnote{margin:0;font-size:13px;color:var(--muted)}
+#fxSliders{display:flex;flex-direction:column;gap:6px}
+.fxrow{display:grid;grid-template-columns:minmax(0,9.5em) 1fr 3.2em;align-items:center;gap:10px;font-size:14px}
+.fxrow b{font-weight:500;text-align:right;font-variant-numeric:tabular-nums;color:var(--muted)}
+.fxreset{align-self:flex-start;border:1px solid var(--line);background:transparent;border-radius:10px;padding:8px 12px;font-size:14px}
 .textwrap{position:absolute;left:0;right:0;top:0;height:var(--area,56%);
   background:linear-gradient(rgba(0,0,0,.74) 72%,rgba(0,0,0,0))}
 #scroller{position:absolute;inset:0;overflow-y:scroll;-webkit-overflow-scrolling:touch;scrollbar-width:none;
@@ -168,7 +191,7 @@ input[type=range]{width:100%;accent-color:var(--cue)}
 
 <!-- ============ СУФЛЁР ============ -->
 <section class="prompter" id="prompter" hidden>
-  <div class="frame" id="frame"><video id="cam" playsinline autoplay muted></video></div>
+  <div class="frame" id="frame"><video id="cam" playsinline autoplay muted></video><canvas id="fxCanvas" hidden></canvas></div>
   <div class="rotate" id="rotate" hidden>Поверните телефон</div>
 
   <div class="textwrap" id="textwrap">
@@ -182,6 +205,9 @@ input[type=range]{width:100%;accent-color:var(--cue)}
       <div class="pill" id="recPill" hidden><span class="dot"></span><span id="recTime">00:00</span></div>
     </div>
     <div class="topright">
+      <button class="icon" id="fxBtn" type="button" aria-label="Звук и картинка">
+        <svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
+      </button>
       <button class="icon fmtbtn" id="fmtBtn" type="button" aria-label="Сменить формат видео">9:16</button>
       <button class="icon" id="close" type="button" aria-label="Закрыть суфлёр">
         <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
@@ -205,6 +231,29 @@ input[type=range]{width:100%;accent-color:var(--cue)}
     </div>
   </div>
 
+  <div class="fxpanel" id="fxPanel" hidden>
+    <div class="fxhead">
+      <b>Звук и картинка</b>
+      <button type="button" class="fxclose" id="fxClose">Готово</button>
+    </div>
+    <div class="fxsec">Звук</div>
+    <div class="fxtogs">
+      <button type="button" class="fxtog" id="fxVoice" aria-pressed="true">Обработка голоса</button>
+      <button type="button" class="fxtog" id="fxDenoise" aria-pressed="true">Шумодав</button>
+    </div>
+    <div class="meter" aria-hidden="true"><i id="fxMeter"></i></div>
+    <p class="fxnote" id="fxAudioNote" hidden>Обработка звука в этом браузере не запустилась, пишется исходный звук.</p>
+    <p class="fxnote" id="fxDenoiseNote" hidden>Шумодав не загрузился, остальная обработка голоса работает.</p>
+    <div class="fxsec">Картинка</div>
+    <div class="fxtogs">
+      <button type="button" class="fxtog" id="fxVideo" aria-pressed="true">Улучшение</button>
+      <button type="button" class="fxtog hold" id="fxHold">Держите: до / после</button>
+    </div>
+    <p class="fxnote" id="fxVideoNote" hidden>Обработка картинки недоступна: браузер не дал WebGL.</p>
+    <div id="fxSliders"></div>
+    <button type="button" class="fxreset" id="fxReset">Сбросить картинку</button>
+  </div>
+
   <div class="count" id="count" hidden></div>
   <div class="toast" id="toast" hidden></div>
 </section>
@@ -219,6 +268,7 @@ input[type=range]{width:100%;accent-color:var(--cue)}
   <div class="row"><button id="again" type="button">Переснять</button></div>
 </div>
 
+<script src="fx.js"></script>
 <script>
 (() => {
 const $ = s => document.querySelector(s);
@@ -465,6 +515,7 @@ function startAuto(){
 /* ---------- камера ---------- */
 async function openPrompter(){
   $('#err').hidden = true;
+  TPFX.prepareAudio();
   if(!navigator.mediaDevices?.getUserMedia){
     showErr('Камера недоступна. Откройте страницу в Safari по адресу https://…'); return;
   }
@@ -479,11 +530,18 @@ async function openPrompter(){
     return;
   }
   await widenView(S.stream.getVideoTracks()[0]);
+  TPFX.initCamera(S.stream.getVideoTracks()[0]);
+  TPFX.onWarn = t => toast(t);
+  TPFX.onVideoToggle = () => { $('#fxCanvas').hidden = !(TPFX.gl && (TPFX.s.video || TPFX.recording)); };
+  await TPFX.initAudio(S.stream);
+  $('#cam').srcObject = S.stream;
+  TPFX.initVideo($('#cam'), $('#fxCanvas'), fmtDims);
+  TPFX.onVideoToggle();
   {
     const vs = S.stream.getVideoTracks()[0]?.getSettings() || {}, as = S.stream.getAudioTracks()[0]?.getSettings() || {};
-    setTimeout(() => toast(`Камера ${vs.width || '?'}×${vs.height || '?'}, ${Math.round(vs.frameRate || 0) || '?'} к/с · звук ${as.sampleRate ? Math.round(as.sampleRate / 1000) + ' кГц' : '?'}`), 600);
+    const fx = [TPFX.audio ? (TPFX.audio.ns ? 'звук + шумодав' : 'звук') : '', TPFX.gl ? 'картинка' : ''].filter(Boolean).join(', ');
+    setTimeout(() => toast(`Камера ${vs.width || '?'}×${vs.height || '?'}, ${Math.round(vs.frameRate || 0) || '?'} к/с · звук ${as.sampleRate ? Math.round(as.sampleRate / 1000) + ' кГц' : '?'}${fx ? ' · обработка: ' + fx : ''}`), 600);
   }
-  $('#cam').srcObject = S.stream;
   $('#editor').hidden = true; $('#prompter').hidden = false; S.open = true;
   render(); applyLook(); sizeFrame();
   S.idx = 0; resetMarks(); sc.scrollTop = 0;
@@ -517,6 +575,7 @@ function closePrompter(){
   if(S.recorder?.state === 'recording'){ S.discardOnStop = true; S.recorder.stop(); }
   S.open = false; stopRecog(); cancelAnimationFrame(S.autoRaf);
   S.stream?.getTracks().forEach(t => t.stop()); S.stream = null;
+  TPFX.stop(); $('#fxCanvas').hidden = true; closeFx();
   try{ S.wake?.release(); }catch(_){}
   $('#prompter').hidden = true; $('#editor').hidden = false;
 }
@@ -534,7 +593,7 @@ async function toggleRec(){
   c.hidden = true;
   const type = pickType();
   S.chunks = []; S.discardOnStop = false;
-  const recStream = startCanvas() || S.stream;
+  const recStream = startCanvas() || new MediaStream([...S.stream.getVideoTracks(), ...TPFX.audioTracks(S.stream)]);
   S.recorder = new MediaRecorder(recStream, type ? { mimeType: type, videoBitsPerSecond: 16e6, audioBitsPerSecond: 192000 } : {});
   S.recorder.ondataavailable = e => e.data.size && S.chunks.push(e.data);
   S.recorder.onstop = () => {
@@ -555,6 +614,14 @@ async function toggleRec(){
 }
 /* кадр рисуется на холст точно в выбранной пропорции: 1080×1920 или 1920×1080 */
 function startCanvas(){
+  // с обработкой картинки пишем тот же холст WebGL, что видно в превью
+  const fxc = $('#fxCanvas');
+  if(TPFX.gl && TPFX.s.video && fxc.captureStream){
+    const cs = fxc.captureStream(30);
+    TPFX.audioTracks(S.stream).forEach(t => cs.addTrack(t));
+    S.canvasStream = cs; TPFX.recording = true;
+    return cs;
+  }
   const cv = document.createElement('canvas');
   if(!cv.captureStream) return null;
   const [w, h] = fmtDims(); cv.width = w; cv.height = h;
@@ -579,12 +646,13 @@ function startCanvas(){
     requestAnimationFrame(draw);
   }
   const cs = cv.captureStream(30);
-  S.stream.getAudioTracks().forEach(t => cs.addTrack(t));
+  TPFX.audioTracks(S.stream).forEach(t => cs.addTrack(t));
   S.canvasStream = cs;
   return cs;
 }
 function stopCanvas(){
   S.drawing = false;
+  if(TPFX.recording){ TPFX.recording = false; TPFX.onVideoToggle?.(); }
   S.canvasStream?.getVideoTracks().forEach(t => t.stop());
   S.canvasStream = null;
 }
@@ -628,6 +696,18 @@ function bump(d){
 $('#smaller').addEventListener('click', () => bump(-2));
 $('#bigger').addEventListener('click', () => bump(2));
 $('#fmtBtn').addEventListener('click', () => setFmt(S.fmt === 'h' ? 'v' : 'h'));
+function openFx(){
+  TPFX.buildPanel($('#fxPanel'));
+  $('#fxPanel').hidden = false; TPFX.panelOpen = true; $('#textwrap').hidden = true;
+  TPFX.meterLoop($('#fxMeter'));
+}
+function closeFx(){
+  const was = !$('#fxPanel').hidden;
+  $('#fxPanel').hidden = true; TPFX.panelOpen = false; TPFX.holding = false; $('#textwrap').hidden = false;
+  if(was && S.open) requestAnimationFrame(() => { placeCue(); scrollToIdx(); });
+}
+$('#fxBtn').addEventListener('click', () => $('#fxPanel').hidden ? openFx() : closeFx());
+$('#fxClose').addEventListener('click', closeFx);
 addEventListener('resize', () => { if(S.open){ sizeFrame(); placeCue(); scrollToIdx(); } });
 document.addEventListener('visibilitychange', async () => {
   if(document.visibilityState === 'visible' && S.open){ try{ S.wake = await navigator.wakeLock?.request('screen'); }catch(_){} }
