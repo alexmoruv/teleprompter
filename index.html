@@ -471,13 +471,18 @@ async function openPrompter(){
   try{
     S.stream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: 'user', width: { ideal: 1920 }, height: { ideal: 1440 }, aspectRatio: { ideal: 4/3 }, frameRate: { ideal: 30 } },
-      audio: { echoCancellation: true, noiseSuppression: true }
+      // без «телефонной» обработки голоса: эхоподавление и шумодав режут частоты и дают «плавающий» звук
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, sampleRate: { ideal: 48000 }, channelCount: { ideal: 1 } }
     });
   }catch(e){
     showErr(e.name === 'NotAllowedError' ? 'Safari не дал доступ к камере. Разрешите камеру и микрофон: «аА» в адресной строке → Настройки веб-сайта.' : 'Не удалось включить камеру: ' + e.message);
     return;
   }
   await widenView(S.stream.getVideoTracks()[0]);
+  {
+    const vs = S.stream.getVideoTracks()[0]?.getSettings() || {}, as = S.stream.getAudioTracks()[0]?.getSettings() || {};
+    setTimeout(() => toast(`Камера ${vs.width || '?'}×${vs.height || '?'}, ${Math.round(vs.frameRate || 0) || '?'} к/с · звук ${as.sampleRate ? Math.round(as.sampleRate / 1000) + ' кГц' : '?'}`), 600);
+  }
   $('#cam').srcObject = S.stream;
   $('#editor').hidden = true; $('#prompter').hidden = false; S.open = true;
   render(); applyLook(); sizeFrame();
@@ -495,8 +500,7 @@ async function widenView(track){
   const tries = [
     { width: { ideal: 1920 }, height: { ideal: 1440 } },
     { width: { ideal: 1440 }, height: { ideal: 1920 } },
-    { width: { ideal: 1280 }, height: { ideal: 960 } },
-    { width: { ideal: 640 }, height: { ideal: 480 } }
+    { width: { ideal: 1280 }, height: { ideal: 960 } }
   ];
   for(const c of tries){
     if(is43()) break;
@@ -531,7 +535,7 @@ async function toggleRec(){
   const type = pickType();
   S.chunks = []; S.discardOnStop = false;
   const recStream = startCanvas() || S.stream;
-  S.recorder = new MediaRecorder(recStream, type ? { mimeType: type, videoBitsPerSecond: 8e6 } : {});
+  S.recorder = new MediaRecorder(recStream, type ? { mimeType: type, videoBitsPerSecond: 16e6, audioBitsPerSecond: 192000 } : {});
   S.recorder.ondataavailable = e => e.data.size && S.chunks.push(e.data);
   S.recorder.onstop = () => {
     stopCanvas();
@@ -554,22 +558,26 @@ function startCanvas(){
   const cv = document.createElement('canvas');
   if(!cv.captureStream) return null;
   const [w, h] = fmtDims(); cv.width = w; cv.height = h;
-  const ctx = cv.getContext('2d'), v = $('#cam');
-  let last = 0;
-  const draw = now => {
-    if(!S.drawing) return;
-    if(now - last >= 32){
-      last = now;
-      const vw = v.videoWidth, vh = v.videoHeight;
-      if(vw && vh){
-        const s = Math.max(w / vw, h / vh), dw = vw * s, dh = vh * s;
-        ctx.drawImage(v, (w - dw) / 2, (h - dh) / 2, dw, dh);
-      }
+  const ctx = cv.getContext('2d', { alpha: false }), v = $('#cam');
+  ctx.imageSmoothingQuality = 'high';
+  const paint = () => {
+    const vw = v.videoWidth, vh = v.videoHeight;
+    if(vw && vh){
+      const s = Math.max(w / vw, h / vh), dw = vw * s, dh = vh * s;
+      ctx.drawImage(v, (w - dw) / 2, (h - dh) / 2, dw, dh);
     }
-    requestAnimationFrame(draw);
   };
   ctx.fillStyle = '#000'; ctx.fillRect(0, 0, w, h);
-  S.drawing = true; requestAnimationFrame(draw);
+  S.drawing = true;
+  if(v.requestVideoFrameCallback){
+    // рисуем ровно по кадрам камеры: без пропусков и дублей, движение плавное
+    const onFrame = () => { if(!S.drawing) return; paint(); v.requestVideoFrameCallback(onFrame); };
+    v.requestVideoFrameCallback(onFrame);
+  } else {
+    let last = 0;
+    const draw = now => { if(!S.drawing) return; if(now - last >= 30){ last = now; paint(); } requestAnimationFrame(draw); };
+    requestAnimationFrame(draw);
+  }
   const cs = cv.captureStream(30);
   S.stream.getAudioTracks().forEach(t => cs.addTrack(t));
   S.canvasStream = cs;
